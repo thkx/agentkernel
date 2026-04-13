@@ -2,19 +2,28 @@ package policy
 
 import "github.com/thkx/agentkernel/types"
 
-type PolicyEngine struct{}
+type Planner struct{}
 
-func (p *PolicyEngine) Plan(input any) []types.Task {
-	return []types.Task{
-		{
-			ID:    "task-1",
-			Type:  "llm",
-			Input: input,
-		},
-		{
-			ID:    "task-2",
-			Type:  "tool",
-			Input: "process result",
+func (p *Planner) Build(input any) *types.Graph {
+
+	return &types.Graph{
+		Start: "n1",
+		Nodes: map[types.NodeID]*types.Node{
+
+			"n1": {
+				ID:         "n1",
+				Capability: "llm",
+				Input:      input,
+				Next: []types.Edge{
+					{To: "n2"},
+				},
+			},
+
+			"n2": {
+				ID:         "n2",
+				Capability: "tool",
+				Input:      "process",
+			},
 		},
 	}
 }

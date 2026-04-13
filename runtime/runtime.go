@@ -1,38 +1,40 @@
 package runtime
 
 import (
+	"github.com/thkx/agentkernel/capability"
 	"github.com/thkx/agentkernel/event"
 	"github.com/thkx/agentkernel/policy"
 	"github.com/thkx/agentkernel/scheduler"
-	"github.com/thkx/agentkernel/worker"
 )
 
 type Runtime struct {
-	policy *policy.PolicyEngine
-	sched  *scheduler.Scheduler
+	sched *scheduler.Scheduler
+	pol   *policy.Planner
+	bus   *event.Bus
 }
 
 func NewRuntime() *Runtime {
+
 	bus := event.NewBus()
 
-	s := scheduler.NewScheduler(bus)
+	pl := &policy.Planner{}
 
-	s.SetWorkers([]*worker.Worker{
-		{ID: 1},
-	})
+	graph := pl.Build("hello v0.2")
+
+	engine := scheduler.NewGraphEngine(graph)
+
+	s := scheduler.New(engine, bus)
+
+	s.Register(&capability.LLM{})
+	s.Register(&capability.Tool{})
 
 	return &Runtime{
-		policy: &policy.PolicyEngine{},
-		sched:  s,
+		sched: s,
+		pol:   pl,
+		bus:   bus,
 	}
 }
 
-func (r *Runtime) Start(input any) {
-	tasks := r.policy.Plan(input)
-
-	go r.sched.Run()
-
-	for _, t := range tasks {
-		r.sched.Submit(t)
-	}
+func (r *Runtime) Run() {
+	go r.sched.Run("n1", map[string]any{})
 }

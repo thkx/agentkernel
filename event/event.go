@@ -3,7 +3,7 @@ package event
 import "sync"
 
 type Event struct {
-	TaskID string
+	NodeID string
 	Result any
 }
 
