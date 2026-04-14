@@ -13,14 +13,14 @@ type RuntimeOption func(*Runtime)
 type Runtime struct {
 	sched *scheduler.Scheduler
 	pol   *policy.Planner
-	bus   *event.Bus
+	bus   *event.SourcingBus
 	caps  *capability.Registry
 	graph *types.Graph[any]
 }
 
 func NewRuntime(opts ...RuntimeOption) *Runtime {
 	r := &Runtime{
-		bus:  event.NewBus(),
+		bus:  event.NewSourcingBus(event.NewInMemoryEventStore()),
 		pol:  &policy.Planner{},
 		caps: capability.NewRegistry(),
 	}
@@ -33,13 +33,13 @@ func NewRuntime(opts ...RuntimeOption) *Runtime {
 		r.pol = &policy.Planner{}
 	}
 	if r.bus == nil {
-		r.bus = event.NewBus()
+		r.bus = event.NewSourcingBus(event.NewInMemoryEventStore())
 	}
 	if r.caps == nil {
 		r.caps = capability.NewRegistry()
 	}
 	if r.graph == nil {
-		r.graph = r.pol.Build("hello v0.3")
+		r.graph = r.pol.Build("hello v0.4")
 	}
 
 	engine := scheduler.NewGraphEngine(r.graph)
@@ -54,7 +54,7 @@ func WithPlanner(pl *policy.Planner) RuntimeOption {
 	}
 }
 
-func WithBus(bus *event.Bus) RuntimeOption {
+func WithBus(bus *event.SourcingBus) RuntimeOption {
 	return func(r *Runtime) {
 		r.bus = bus
 	}
@@ -85,6 +85,6 @@ func (r *Runtime) Run() {
 	go r.sched.Run(r.graph.Start, map[string]any{})
 }
 
-func (r *Runtime) Bus() *event.Bus {
+func (r *Runtime) Bus() *event.SourcingBus {
 	return r.bus
 }
