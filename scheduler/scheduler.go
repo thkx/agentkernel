@@ -13,16 +13,24 @@ import (
 )
 
 type Scheduler struct {
-	engine *GraphEngine[any]
-	caps   *capability.Registry
-	event  *event.SourcingBus
+	engine     *GraphEngine[any]
+	caps       *capability.Registry
+	event      *event.SourcingBus
+	taskStates map[types.NodeID]types.TaskStatus
+	executed   map[string]bool // Idempotency keys
+	dlq        *DeadLetterQueue
+	retryPol   *retry.RetryPolicy
 }
 
 func New(engine *GraphEngine[any], bus *event.SourcingBus, caps *capability.Registry) *Scheduler {
 	return &Scheduler{
-		engine: engine,
-		caps:   caps,
-		event:  bus,
+		engine:     engine,
+		caps:       caps,
+		event:      bus,
+		taskStates: make(map[types.NodeID]types.TaskStatus),
+		executed:   make(map[string]bool),
+		dlq:        NewDeadLetterQueue(),
+		retryPol:   retry.NewRetryPolicy(3, 100*time.Millisecond),
 	}
 }
 
@@ -37,22 +45,19 @@ func (s *Scheduler) Run(start types.NodeID, state map[string]any) {
 		return
 	}
 
-	// Build dependency map: node -> list of nodes that depend on it (outgoing)
-	dependencies := s.buildDependencies(graph)
+	// Crash recovery: replay events to restore state
+	s.recoverState()
 
-	// Completion channels
+	dependencies := s.buildDependencies(graph)
 	completions := make(map[types.NodeID]chan struct{})
 	for id := range graph.Nodes {
 		completions[id] = make(chan struct{})
 	}
 
 	var wg sync.WaitGroup
-
-	// Worker pool
-	workerPool := worker.NewPool(10) // max 10 concurrent workers
+	workerPool := worker.NewPool(10)
 	defer workerPool.Close()
 
-	// Function to execute a node
 	executeNode := func(nodeID types.NodeID) {
 		defer wg.Done()
 
@@ -62,12 +67,22 @@ func (s *Scheduler) Run(start types.NodeID, state map[string]any) {
 			return
 		}
 
-		// Wait for dependencies (incoming edges)
+		// Idempotency check
+		key := string(nodeID) + ":" + string(node.Capability)
+		if s.executed[key] {
+			log.Printf("node %s already executed, skipping", nodeID)
+			close(completions[nodeID])
+			return
+		}
+
+		// Set status to Running
+		s.taskStates[nodeID] = types.Running
+
+		// Wait for dependencies
 		for _, dep := range dependencies[nodeID] {
 			<-completions[dep]
 		}
 
-		// Submit to worker pool
 		workerPool.Submit(func() {
 			ctx := types.ExecContext{
 				NodeID: nodeID,
@@ -77,6 +92,8 @@ func (s *Scheduler) Run(start types.NodeID, state map[string]any) {
 			cap, ok := s.caps.Get(node.Capability)
 			if !ok {
 				log.Printf("capability not found: %s", node.Capability)
+				s.taskStates[nodeID] = types.Failed
+				close(completions[nodeID])
 				return
 			}
 
@@ -91,8 +108,27 @@ func (s *Scheduler) Run(start types.NodeID, state map[string]any) {
 
 			if err != nil {
 				result.Status = types.FAILED
-				// Retry logic
-				s.retryNode(nodeID, node, ctx, cap, &result)
+				// Retry
+				if s.retryNode(nodeID, node, ctx, cap, &result) {
+					s.taskStates[nodeID] = types.Done
+					s.executed[key] = true
+				} else {
+					s.taskStates[nodeID] = types.Failed
+					// To DLQ
+					task := types.Task{
+						ID:             string(nodeID),
+						Type:           string(node.Capability),
+						Input:          node.Input,
+						Attempt:        3,
+						Status:         types.Failed,
+						IdempotencyKey: key,
+						NodeID:         nodeID,
+					}
+					s.dlq.Enqueue(task)
+				}
+			} else {
+				s.taskStates[nodeID] = types.Done
+				s.executed[key] = true
 			}
 
 			s.event.Publish(event.Event{
@@ -100,18 +136,32 @@ func (s *Scheduler) Run(start types.NodeID, state map[string]any) {
 				Result: result,
 			})
 
-			// Signal completion
 			close(completions[nodeID])
 		})
 	}
 
-	// Start all nodes (they will wait for dependencies)
 	for id := range graph.Nodes {
 		wg.Add(1)
 		go executeNode(id)
 	}
 
 	wg.Wait()
+}
+
+// recoverState replays events to restore task states
+func (s *Scheduler) recoverState() {
+	s.event.Replay(func(ev event.Event) {
+		if result, ok := ev.Result.(types.Result); ok {
+			nodeID := types.NodeID(ev.NodeID)
+			if result.Status == types.SUCCESS {
+				s.taskStates[nodeID] = types.Done
+				key := ev.NodeID + ":" + string(s.engine.GetNode(nodeID).Capability)
+				s.executed[key] = true
+			} else {
+				s.taskStates[nodeID] = types.Failed
+			}
+		}
+	})
 }
 
 // buildDependencies builds a map of node -> list of predecessors
@@ -126,20 +176,18 @@ func (s *Scheduler) buildDependencies(graph *types.Graph[any]) map[types.NodeID]
 }
 
 // retryNode implements retry logic
-func (s *Scheduler) retryNode(nodeID types.NodeID, node *types.Node[any], ctx types.ExecContext, cap capability.Capability, result *types.Result) {
-	policy := &retry.RetryPolicy{}
-	maxAttempts := 3
-	for attempt := 1; attempt <= maxAttempts; attempt++ {
+func (s *Scheduler) retryNode(nodeID types.NodeID, node *types.Node[any], ctx types.ExecContext, cap capability.Capability, result *types.Result) bool {
+	for attempt := 1; s.retryPol.ShouldRetry(attempt); attempt++ {
 		log.Printf("Retrying node %s, attempt %d", nodeID, attempt)
-		time.Sleep(policy.Next(attempt))
+		time.Sleep(s.retryPol.Next(attempt))
 
 		output, err := cap.Invoke(ctx, node.Input)
 		if err == nil {
 			result.Output = output
 			result.Error = nil
 			result.Status = types.SUCCESS
-			return
+			return true
 		}
 	}
-	// After max retries, keep failed status
+	return false
 }

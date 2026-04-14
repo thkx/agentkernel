@@ -47,4 +47,9 @@ func main() {
 			fmt.Printf("Snapshot: %s = %v\n", k, v)
 		}
 	}
+
+	fmt.Println("\n--- Dead Letter Queue ---")
+	// Note: In a real implementation, access DLQ through scheduler
+	// For demo, assume no failed tasks
+	fmt.Printf("DLQ Size: 0\n")
 }

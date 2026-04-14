@@ -39,7 +39,7 @@ func NewRuntime(opts ...RuntimeOption) *Runtime {
 		r.caps = capability.NewRegistry()
 	}
 	if r.graph == nil {
-		r.graph = r.pol.Build("hello v0.4")
+		r.graph = r.pol.Build("hello v0.5")
 	}
 
 	engine := scheduler.NewGraphEngine(r.graph)
