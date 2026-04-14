@@ -2,14 +2,14 @@ package scheduler
 
 import "github.com/thkx/agentkernel/types"
 
-type GraphEngine struct {
-	graph *types.Graph
+type GraphEngine[T any] struct {
+	graph *types.Graph[T]
 }
 
-func NewGraphEngine(g *types.Graph) *GraphEngine {
-	return &GraphEngine{graph: g}
+func NewGraphEngine[T any](g *types.Graph[T]) *GraphEngine[T] {
+	return &GraphEngine[T]{graph: g}
 }
 
-func (g *GraphEngine) GetNode(id types.NodeID) *types.Node {
+func (g *GraphEngine[T]) GetNode(id types.NodeID) *types.Node[T] {
 	return g.graph.Nodes[id]
 }

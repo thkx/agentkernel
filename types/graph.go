@@ -2,10 +2,12 @@ package types
 
 type NodeID string
 
-type Node struct {
+type CapabilityName string
+
+type Node[T any] struct {
 	ID         NodeID
-	Capability string
-	Input      any
+	Capability CapabilityName
+	Input      T
 	Next       []Edge
 }
 
@@ -14,7 +16,14 @@ type Edge struct {
 	Condition func(result Result) bool
 }
 
-type Graph struct {
+type Graph[T any] struct {
 	Start NodeID
-	Nodes map[NodeID]*Node
+	Nodes map[NodeID]*Node[T]
+}
+
+func NewGraph[T any](start NodeID, nodes map[NodeID]*Node[T]) *Graph[T] {
+	return &Graph[T]{
+		Start: start,
+		Nodes: nodes,
+	}
 }
