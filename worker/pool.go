@@ -5,17 +5,15 @@ import (
 )
 
 type Pool struct {
-	workers    int
-	tasks      chan func()
-	wg         sync.WaitGroup
-	shutdownCh chan struct{}
+	workers int
+	tasks   chan func()
+	wg      sync.WaitGroup
 }
 
 func NewPool(workers int) *Pool {
 	p := &Pool{
-		workers:    workers,
-		tasks:      make(chan func(), workers*2),
-		shutdownCh: make(chan struct{}),
+		workers: workers,
+		tasks:   make(chan func(), workers*2),
 	}
 
 	for i := 0; i < workers; i++ {
@@ -28,25 +26,16 @@ func NewPool(workers int) *Pool {
 
 func (p *Pool) worker() {
 	defer p.wg.Done()
-	for {
-		select {
-		case task := <-p.tasks:
-			task()
-		case <-p.shutdownCh:
-			return
-		}
+	for task := range p.tasks {
+		task()
 	}
 }
 
 func (p *Pool) Submit(task func()) {
-	select {
-	case p.tasks <- task:
-	case <-p.shutdownCh:
-		return
-	}
+	p.tasks <- task
 }
 
 func (p *Pool) Close() {
-	close(p.shutdownCh)
+	close(p.tasks)
 	p.wg.Wait()
 }

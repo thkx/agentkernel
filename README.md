@@ -234,5 +234,5 @@ UI 类型：
 
 | 版本       | 核心主题        | 关键能力                        | 需要实现的条目                                                                                                                                                                                             | 目标效果                     |
 | -------- | ----------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
-| **v0.5** | 可恢复 + 幂等执行  | Fault Tolerance             | 1. Idempotency Key（任务级）<br>2. 去重执行（exactly-once 语义）<br>3. Retry Policy（指数退避）<br>4. Dead Letter Queue（失败任务）<br>5. Task 状态机（Pending/Running/Done）<br>6. Crash Recovery（进程重启恢复）                        | 达到“不会重复执行 + 可恢复”         |
+| **v0.6** | 可观测性        | Observability               | 1. Trace（TraceID / Span）<br>2. Structured Logging<br>3. Metrics（QPS / latency）<br>4. Execution Timeline（执行时间线）<br>5. Debug Replay UI<br>6. Hook System（before/after exec）                           | 达到“可调试、可分析”              |
 

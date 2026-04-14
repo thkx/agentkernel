@@ -3,8 +3,10 @@ package event
 import "sync"
 
 type Event struct {
-	NodeID string
-	Result any
+	NodeID  string
+	TraceID string
+	SpanID  string
+	Result  any
 }
 
 type Bus struct {
@@ -33,4 +35,8 @@ func (b *Bus) Publish(e Event) {
 	for _, s := range b.subscribers {
 		s <- e
 	}
+}
+
+func (b *Bus) Replay(handler func(Event)) {
+	// Bus doesn't store events, so no replay
 }

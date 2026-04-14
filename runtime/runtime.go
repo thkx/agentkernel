@@ -11,11 +11,13 @@ import (
 type RuntimeOption func(*Runtime)
 
 type Runtime struct {
-	sched *scheduler.Scheduler
-	pol   *policy.Planner
-	bus   *event.SourcingBus
-	caps  *capability.Registry
-	graph *types.Graph[any]
+	sched       types.Scheduler
+	pol         *policy.Planner
+	bus         types.EventBus
+	caps        *capability.Registry
+	graph       *types.Graph[any]
+	beforeHooks []types.HookFunc
+	afterHooks  []types.HookFunc
 }
 
 func NewRuntime(opts ...RuntimeOption) *Runtime {
@@ -39,11 +41,18 @@ func NewRuntime(opts ...RuntimeOption) *Runtime {
 		r.caps = capability.NewRegistry()
 	}
 	if r.graph == nil {
-		r.graph = r.pol.Build("hello v0.5")
+		r.graph = r.pol.Build("hello v0.6")
 	}
 
 	engine := scheduler.NewGraphEngine(r.graph)
 	r.sched = scheduler.New(engine, r.bus, r.caps)
+
+	for _, hook := range r.beforeHooks {
+		r.sched.RegisterBeforeHook(hook)
+	}
+	for _, hook := range r.afterHooks {
+		r.sched.RegisterAfterHook(hook)
+	}
 
 	return r
 }
@@ -54,7 +63,7 @@ func WithPlanner(pl *policy.Planner) RuntimeOption {
 	}
 }
 
-func WithBus(bus *event.SourcingBus) RuntimeOption {
+func WithBus(bus types.EventBus) RuntimeOption {
 	return func(r *Runtime) {
 		r.bus = bus
 	}
@@ -81,10 +90,26 @@ func WithPlugin(plugin capability.Plugin) RuntimeOption {
 	}
 }
 
+func WithBeforeHook(hook types.HookFunc) RuntimeOption {
+	return func(r *Runtime) {
+		r.beforeHooks = append(r.beforeHooks, hook)
+	}
+}
+
+func WithAfterHook(hook types.HookFunc) RuntimeOption {
+	return func(r *Runtime) {
+		r.afterHooks = append(r.afterHooks, hook)
+	}
+}
+
 func (r *Runtime) Run() {
 	go r.sched.Run(r.graph.Start, map[string]any{})
 }
 
-func (r *Runtime) Bus() *event.SourcingBus {
+func (r *Runtime) Bus() types.EventBus {
 	return r.bus
+}
+
+func (r *Runtime) Scheduler() types.Scheduler {
+	return r.sched
 }

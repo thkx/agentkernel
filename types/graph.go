@@ -1,5 +1,7 @@
 package types
 
+import "time"
+
 type NodeID string
 
 type CapabilityName string
@@ -19,6 +21,19 @@ type Edge struct {
 type Graph[T any] struct {
 	Start NodeID
 	Nodes map[NodeID]*Node[T]
+}
+
+type ExecutionTimelineEntry struct {
+	TraceID    string
+	SpanID     string
+	NodeID     NodeID
+	Capability CapabilityName
+	Status     ExecStatus
+	StartTime  time.Time
+	EndTime    time.Time
+	Duration   time.Duration
+	Attempt    int
+	Error      string
 }
 
 func NewGraph[T any](start NodeID, nodes map[NodeID]*Node[T]) *Graph[T] {
