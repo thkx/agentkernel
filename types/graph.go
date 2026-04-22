@@ -7,10 +7,15 @@ type NodeID string
 type CapabilityName string
 
 type Node[T any] struct {
-	ID         NodeID
-	Capability CapabilityName
-	Input      T
-	Next       []Edge
+	ID                NodeID
+	Capability        CapabilityName
+	Input             T
+	Next              []Edge
+	Priority          int
+	Tenant            string
+	Timeout           time.Duration
+	RateLimit         int
+	CircuitBreakerKey string
 }
 
 type Edge struct {

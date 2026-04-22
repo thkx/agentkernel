@@ -15,13 +15,29 @@ func main() {
 	registry.Load(&capability.LLMPlugin{})
 	registry.Load(&capability.ToolPlugin{})
 
+	// Build a simple graph
+	builder := policy.NewPolicyBuilder().
+		Start("n1").
+		Node("n1").
+			Capability("llm").
+			Input("hello world").
+			NextNode("n2").
+			Build().
+		Node("n2").
+			Capability("tool").
+			Input("process result").
+			Build()
+
+	graph := builder.BuildGraph()
+
 	rt := runtime.NewRuntime(
-		runtime.WithPlanner(&policy.Planner{}),
+		runtime.WithGraph(graph),
 		runtime.WithCapabilityRegistry(registry),
 		runtime.WithBeforeHook(func(ctx types.HookContext) {
-			fmt.Printf("HOOK before node=%s trace=%s span=%s\n", ctx.NodeID, ctx.TraceID, ctx.SpanID)
+			fmt.Printf("HOOK before node=%s trace=%s span=%s snapshot_keys=%d\n", ctx.NodeID, ctx.TraceID, ctx.SpanID, len(ctx.SnapshotState()))
 		}),
-		runtime.WithAfterHook(func(ctx types.HookContext) {
+		runtime.WithAfterWritableHook(func(ctx types.WritableHookContext) {
+			ctx.SetState("last_node", string(ctx.NodeID))
 			fmt.Printf("HOOK after node=%s trace=%s span=%s status=%s duration=%v\n", ctx.NodeID, ctx.TraceID, ctx.SpanID, ctx.Result.Status, ctx.Result.Output)
 		}),
 	)

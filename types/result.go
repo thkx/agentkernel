@@ -6,5 +6,6 @@ type Result struct {
 	Control   ControlSignal
 	NextNode  NodeID
 	Error     error
+	Attempt   int
 	Retryable bool
 }

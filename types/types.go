@@ -1,6 +1,9 @@
 package types
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 // ExecStatus represents execution status
 type ExecStatus string
@@ -48,9 +51,12 @@ type Event struct {
 // Scheduler interface for execution abstraction
 type Scheduler interface {
 	Run(start NodeID, state map[string]any)
+	RunWithContext(ctx context.Context, start NodeID, state map[string]any)
 	Register(cap Capability)
 	RegisterBeforeHook(hook HookFunc)
 	RegisterAfterHook(hook HookFunc)
+	RegisterBeforeWritableHook(hook WritableHookFunc)
+	RegisterAfterWritableHook(hook WritableHookFunc)
 	Metrics() MetricsRecorder
 	DLQSize() int
 }

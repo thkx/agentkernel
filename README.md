@@ -70,6 +70,7 @@ Policy：
 
 ❌ 不执行
 
+Policy 增强，可参考 [POLICY_ENHANCEMENT.md](./POLICY_ENHANCEMENT.md)。
 ---
 
 ## 🔴 Principle 5：UI is event consumer only
@@ -195,12 +196,48 @@ UI 类型：
 * Snapshot
 * Diff
 * Replay
+* Shared runtime state accessors
 
 用于：
 
 * Debug
 * 审计
 * 可视化
+
+状态访问约定：
+
+* `ExecContext.State` / `HookContext.State` 是只读快照，用于调试和观察
+* 共享状态读写统一走 `GetState` / `SetState` / `DeleteState`
+* 需要完整副本时，使用 `SnapshotState()`
+
+示例：
+
+```go
+func (c *MyCapability) Invoke(ctx types.ExecContext, input any) (any, error) {
+    retries := ctx.GetState("retries")
+    _ = retries
+
+    ctx.SetState("last_input", input)
+    ctx.DeleteState("temporary")
+
+    snapshot := ctx.SnapshotState()
+    _ = snapshot
+
+    return input, nil
+}
+```
+
+Hook 也遵循同样的规则：
+
+```go
+rt := runtime.NewRuntime(
+    runtime.WithAfterWritableHook(func(ctx types.WritableHookContext) {
+        ctx.SetState("last_node", string(ctx.NodeID))
+    }),
+)
+```
+
+默认情况下，hook 只拿到只读状态访问能力；只有通过 `WithBeforeWritableHook` / `WithAfterWritableHook` 注册并接收 `types.WritableHookContext` 的 hook，写入才会落到共享状态。普通 `HookContext` 不再提供写方法。
 
 ---
 
@@ -234,5 +271,4 @@ UI 类型：
 
 | 版本       | 核心主题        | 关键能力                        | 需要实现的条目                                                                                                                                                                                             | 目标效果                     |
 | -------- | ----------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
-| **v0.6** | 可观测性        | Observability               | 1. Trace（TraceID / Span）<br>2. Structured Logging<br>3. Metrics（QPS / latency）<br>4. Execution Timeline（执行时间线）<br>5. Debug Replay UI<br>6. Hook System（before/after exec）                           | 达到“可调试、可分析”              |
-
+| **v0.7** | 调度系统升级      | Advanced Scheduler          | 1. Priority Queue（优先级调度）<br>2. Backpressure（限流）<br>3. Rate Limit（能力级限流）<br>4. Timeout 控制<br>5. Circuit Breaker（熔断）<br>6. 多队列调度（multi-tenant）                                                        | 达到“生产级调度器”               |

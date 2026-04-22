@@ -1,0 +1,157 @@
+{
+  "version": "1.0",
+  "name": "agent-workflow",
+  "description": "A complete agent workflow with conditional branching, parallel execution, and error handling",
+  "start": "analyze",
+  "global": {
+    "default_timeout": "30s",
+    "default_rate_limit": 100,
+    "tenant_aware": true,
+    "variables": {
+      "max_retries": 3,
+      "batch_size": 10
+    },
+    "default_retry": {
+      "max_attempts": 3,
+      "initial_backoff": "100ms",
+      "max_backoff": "10s",
+      "multiplier": 2.0
+    }
+  },
+  "nodes": {
+    "analyze": {
+      "id": "analyze",
+      "capability": "llm",
+      "input": "Analyze the user request and determine action type",
+      "output_var": "analysis_result",
+      "config": {
+        "priority": 10,
+        "timeout": "15s",
+        "rate_limit": 50,
+        "metadata": {
+          "model": "gpt-4",
+          "temperature": 0.7
+        }
+      },
+      "edges": [
+        {
+          "to": "check_complexity",
+          "condition": "status == 'SUCCESS'",
+          "priority": 1
+        }
+      ]
+    },
+    "check_complexity": {
+      "id": "check_complexity",
+      "capability": "tool",
+      "input": "Determine if task is simple or complex",
+      "output_var": "complexity",
+      "edges": [
+        {
+          "to": "execute_simple",
+          "condition": "output.contains('simple')",
+          "priority": 2
+        },
+        {
+          "to": "decompose_task",
+          "condition": "output.contains('complex')",
+          "priority": 1
+        }
+      ]
+    },
+    "execute_simple": {
+      "id": "execute_simple",
+      "capability": "tool",
+      "input": "Execute simple task directly",
+      "output_var": "simple_result",
+      "config": {
+        "priority": 5
+      },
+      "edges": [
+        {
+          "to": "format_output",
+          "condition": "*"
+        }
+      ]
+    },
+    "decompose_task": {
+      "id": "decompose_task",
+      "capability": "llm",
+      "input": "Break down complex task into subtasks",
+      "output_var": "subtasks",
+      "edges": [
+        {
+          "to": "execute_parallel",
+          "condition": "status == 'SUCCESS'"
+        }
+      ]
+    },
+    "execute_parallel": {
+      "id": "execute_parallel",
+      "capability": "tool",
+      "input": "Execute subtasks in parallel",
+      "output_var": "parallel_results",
+      "config": {
+        "metadata": {
+          "parallel": true,
+          "worker_count": 4
+        }
+      },
+      "edges": [
+        {
+          "to": "aggregate_results",
+          "condition": "status == 'SUCCESS'",
+          "priority": 1
+        },
+        {
+          "to": "handle_error",
+          "condition": "status == 'FAILED'",
+          "priority": 2
+        }
+      ]
+    },
+    "handle_error": {
+      "id": "handle_error",
+      "capability": "tool",
+      "input": "Handle execution errors and retry",
+      "output_var": "error_result",
+      "config": {
+        "continue_on_error": true,
+        "retry": {
+          "max_attempts": 3,
+          "initial_backoff": "200ms",
+          "multiplier": 1.5
+        }
+      },
+      "edges": [
+        {
+          "to": "format_output",
+          "condition": "*"
+        }
+      ]
+    },
+    "aggregate_results": {
+      "id": "aggregate_results",
+      "capability": "tool",
+      "input": "Combine parallel results",
+      "output_var": "aggregated",
+      "edges": [
+        {
+          "to": "format_output",
+          "condition": "*"
+        }
+      ]
+    },
+    "format_output": {
+      "id": "format_output",
+      "capability": "llm",
+      "input": "Format final output for user",
+      "output_var": "final_output",
+      "config": {
+        "priority": 0,
+        "timeout": "10s"
+      },
+      "edges": []
+    }
+  }
+}

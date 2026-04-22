@@ -1,0 +1,121 @@
+version: "1.0"
+name: agent-workflow-yaml
+description: Example workflow using YAML configuration
+start: analyze
+
+global:
+  default_timeout: 30s
+  default_rate_limit: 100
+  tenant_aware: true
+  variables:
+    max_retries: 3
+    batch_size: 10
+  default_retry:
+    max_attempts: 3
+    initial_backoff: 100ms
+    max_backoff: 10s
+    multiplier: 2.0
+
+nodes:
+  analyze:
+    id: analyze
+    capability: llm
+    input: "Analyze the user request and generate action plan"
+    output_var: "analysis_result"
+    config:
+      priority: 10
+      timeout: 15s
+      rate_limit: 50
+      metadata:
+        model: "gpt-4"
+        temperature: 0.7
+    edges:
+      - to: evaluate_complexity
+        condition: "status == 'SUCCESS'"
+        priority: 1
+
+  evaluate_complexity:
+    id: evaluate_complexity
+    capability: tool
+    input: "Determine if the task is simple or complex"
+    output_var: "complexity_level"
+    edges:
+      - to: execute_simple
+        condition: "output.contains('simple')"
+        priority: 2
+      - to: decompose_complex
+        condition: "output.contains('complex')"
+        priority: 1
+
+  execute_simple:
+    id: execute_simple
+    capability: tool
+    input: "Execute simple task directly"
+    output_var: "simple_result"
+    config:
+      priority: 5
+    edges:
+      - to: format_output
+        condition: "*"
+
+  decompose_complex:
+    id: decompose_complex
+    capability: llm
+    input: "Break down complex task into subtasks"
+    output_var: "subtasks"
+    edges:
+      - to: execute_subtasks
+        condition: "status == 'SUCCESS'"
+      - to: handle_error
+        condition: "status == 'FAILED'"
+
+  execute_subtasks:
+    id: execute_subtasks
+    capability: tool
+    input: "Execute all subtasks in parallel"
+    output_var: "subtask_results"
+    config:
+      metadata:
+        parallel: true
+        worker_count: 4
+    edges:
+      - to: aggregate_results
+        condition: "status == 'SUCCESS'"
+        priority: 1
+      - to: handle_error
+        condition: "status == 'FAILED'"
+        priority: 2
+
+  aggregate_results:
+    id: aggregate_results
+    capability: tool
+    input: "Combine and aggregate all subtask results"
+    output_var: "aggregated_result"
+    edges:
+      - to: format_output
+        condition: "*"
+
+  handle_error:
+    id: handle_error
+    capability: tool
+    input: "Handle execution errors gracefully"
+    output_var: "error_handling_result"
+    config:
+      continue_on_error: true
+      retry:
+        max_attempts: 3
+        initial_backoff: 200ms
+        multiplier: 1.5
+    edges:
+      - to: format_output
+        condition: "*"
+
+  format_output:
+    id: format_output
+    capability: llm
+    input: "Format final output for user presentation"
+    output_var: "final_output"
+    config:
+      priority: 0
+      timeout: 10s
+    edges: []

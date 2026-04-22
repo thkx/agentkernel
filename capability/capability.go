@@ -2,6 +2,10 @@ package capability
 
 import "github.com/thkx/agentkernel/types"
 
+// Capability is a runtime-managed execution unit.
+//
+// Implementations should treat ExecContext.State as a read-only snapshot and
+// use ExecContext.GetState/SetState/DeleteState for shared mutable state.
 type Capability interface {
 	Name() types.CapabilityName
 	Invoke(ctx types.ExecContext, input any) (any, error)

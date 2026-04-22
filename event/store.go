@@ -87,26 +87,31 @@ func (s *InMemoryEventStore) Timeline() []types.ExecutionTimelineEntry {
 
 // Enhanced Bus with Event Sourcing
 type SourcingBus struct {
-	*Bus
+	mu    sync.Mutex
 	store EventStore
+	subs  []chan types.Event
 }
 
 func NewSourcingBus(store EventStore) *SourcingBus {
 	return &SourcingBus{
-		Bus:   NewBus(),
 		store: store,
+		subs:  make([]chan types.Event, 0),
 	}
 }
 
 func (b *SourcingBus) Publish(e types.Event) {
-	te := Event{
-		NodeID:  e.NodeID,
-		TraceID: e.TraceID,
-		SpanID:  e.SpanID,
-		Result:  e.Result,
-	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	b.store.Append(e)
-	b.Bus.Publish(te)
+
+	for _, s := range b.subs {
+		select {
+		case s <- e:
+		default:
+			// log non-blocking send, drop event if channel is full
+		}
+	}
 }
 
 func (b *SourcingBus) Replay(handler func(types.Event)) error {
@@ -115,8 +120,9 @@ func (b *SourcingBus) Replay(handler func(types.Event)) error {
 
 func (b *SourcingBus) Subscribe() chan types.Event {
 	ch := make(chan types.Event, 10)
-	// Note: This is a simplified implementation. In a real system,
-	// you'd need to convert event.Event to types.Event
+	b.mu.Lock()
+	b.subs = append(b.subs, ch)
+	b.mu.Unlock()
 	return ch
 }
 
