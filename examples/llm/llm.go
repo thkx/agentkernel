@@ -11,5 +11,5 @@ type LLM struct{}
 func (l *LLM) Name() types.CapabilityName { return "llm" }
 
 func (l *LLM) Invoke(ctx types.ExecContext, input any) (any, error) {
-	return fmt.Sprintf("LLM(%s)", input), nil
+	return fmt.Sprintf("examplesllm(%s)", input), nil
 }
