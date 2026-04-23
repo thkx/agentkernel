@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/thkx/agentkernel/capability"
+	llmplugin "github.com/thkx/agentkernel/plugins/llm"
+	toolplugin "github.com/thkx/agentkernel/plugins/tool"
 	"github.com/thkx/agentkernel/types"
 )
 
@@ -21,7 +23,10 @@ func TestPolicyBuilder_Basic(t *testing.T) {
 		Input("execute").
 		Build()
 
-	graph := builder.BuildGraph()
+	graph, err := builder.BuildGraph()
+	if err != nil {
+		t.Fatalf("BuildGraph failed: %v", err)
+	}
 	if graph == nil {
 		t.Fatal("graph should not be nil")
 	}
@@ -55,7 +60,10 @@ func TestPolicyBuilder_WithConditionalEdges(t *testing.T) {
 		Input("failure").
 		Build()
 
-	graph := builder.BuildGraph()
+	graph, err := builder.BuildGraph()
+	if err != nil {
+		t.Fatalf("BuildGraph failed: %v", err)
+	}
 	n1 := graph.Nodes[types.NodeID("n1")]
 	if len(n1.Next) != 2 {
 		t.Fatalf("expected 2 edges from n1, got %d", len(n1.Next))
@@ -71,7 +79,10 @@ func TestPolicyBuilder_CloneNode(t *testing.T) {
 		Priority(10).
 		Build()
 
-	builder.CloneNode("n1", "n1_clone")
+	_, err := builder.CloneNode("n1", "n1_clone")
+	if err != nil {
+		t.Fatalf("CloneNode failed: %v", err)
+	}
 
 	nodeOrig, _ := builder.GetNode("n1")
 	nodeClone, _ := builder.GetNode("n1_clone")
@@ -254,8 +265,8 @@ func TestPolicyLoader_ValidJSON(t *testing.T) {
 
 func TestPolicyValidator_BasicValidation(t *testing.T) {
 	registry := capability.NewRegistry()
-	registry.Load(&capability.LLMPlugin{})
-	registry.Load(&capability.ToolPlugin{})
+	registry.Load(&llmplugin.Plugin{})
+	registry.Load(&toolplugin.Plugin{})
 
 	config := &PolicyConfig{
 		Version: "1.0",
@@ -326,7 +337,7 @@ func TestPolicyValidator_MissingCapability(t *testing.T) {
 
 func TestPolicyValidator_InvalidEdgeTarget(t *testing.T) {
 	registry := capability.NewRegistry()
-	registry.Load(&capability.LLMPlugin{})
+	registry.Load(&llmplugin.Plugin{})
 
 	config := &PolicyConfig{
 		Version: "1.0",
@@ -380,7 +391,10 @@ func TestFromConfig_BuildsGraphCorrectly(t *testing.T) {
 		t.Fatalf("FromConfig failed: %v", err)
 	}
 
-	graph := builder.BuildGraph()
+	graph, err := builder.BuildGraph()
+	if err != nil {
+		t.Fatalf("BuildGraph failed: %v", err)
+	}
 	if graph == nil {
 		t.Fatal("graph should not be nil")
 	}

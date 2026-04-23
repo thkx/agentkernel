@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/thkx/agentkernel/capability"
+	llmplugin "github.com/thkx/agentkernel/plugins/llm"
+	toolplugin "github.com/thkx/agentkernel/plugins/tool"
 	"github.com/thkx/agentkernel/policy"
 	"github.com/thkx/agentkernel/runtime"
 	"github.com/thkx/agentkernel/types"
@@ -20,8 +22,8 @@ func mainEnhanced() {
 
 	// Setup capability registry
 	registry := capability.NewRegistry()
-	registry.Load(&capability.LLMPlugin{})
-	registry.Load(&capability.ToolPlugin{})
+	registry.Load(&llmplugin.Plugin{})
+	registry.Load(&toolplugin.Plugin{})
 
 	// Example 1: Load policy from JSON config file
 	fmt.Println("Example 1: Loading policy from JSON config")
@@ -111,8 +113,13 @@ func loadFromConfigExample(registry *capability.Registry) {
 	}
 
 	// Build and execute
+	graph, err := builder.BuildGraph()
+	if err != nil {
+		fmt.Printf("BuildGraph failed: %v\n", err)
+		return
+	}
 	rt := runtime.NewRuntime(
-		runtime.WithGraph(builder.BuildGraph()),
+		runtime.WithGraph(graph),
 		runtime.WithCapabilityRegistry(registry),
 		runtime.WithBeforeHook(func(ctx types.HookContext) {
 			fmt.Printf("  [EXEC] Node: %s, Capability: %s\n", ctx.NodeID, ctx.Capability)
@@ -174,8 +181,13 @@ func fluentAPIExample(registry *capability.Registry) {
 	}
 
 	// Execute
+	graph, err := builder.BuildGraph()
+	if err != nil {
+		fmt.Printf("BuildGraph failed: %v\n", err)
+		return
+	}
 	rt := runtime.NewRuntime(
-		runtime.WithGraph(builder.BuildGraph()),
+		runtime.WithGraph(graph),
 		runtime.WithCapabilityRegistry(registry),
 		runtime.WithBeforeHook(func(ctx types.HookContext) {
 			fmt.Printf("  [EXEC] Node: %s, Capability: %s\n", ctx.NodeID, ctx.Capability)
@@ -210,12 +222,16 @@ func runtimeModificationExample(registry *capability.Registry) {
 
 	// Clone a node
 	fmt.Println("\n✓ Cloning step2 as step2_retry")
-	builder.CloneNode("step2", "step2_retry")
+	_, err := builder.CloneNode("step2", "step2_retry")
+	if err != nil {
+		fmt.Printf("  CloneNode failed: %v\n", err)
+		return
+	}
 	fmt.Printf("  Nodes: %v\n", builder.ListNodes())
 
 	// Insert a new node between step1 and step2
 	fmt.Println("\n✓ Inserting validation node between step1 and step2")
-	err := builder.InsertNode("step1", "validate", "step2", "tool", "Validate input")
+	err = builder.InsertNode("step1", "validate", "step2", "tool", "Validate input")
 	if err == nil {
 		fmt.Printf("  Nodes: %v\n", builder.ListNodes())
 	} else {

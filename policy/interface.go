@@ -58,8 +58,6 @@ type Plan struct {
 	Metadata map[string]any
 }
 
-// Removed unused interfaces PolicyBuilderAPI and NodeBuilderAPI
-
 // ConfigDrivenPolicy represents a policy built from configuration
 type ConfigDrivenPolicy struct {
 	name   string

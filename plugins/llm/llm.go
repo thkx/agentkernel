@@ -1,8 +1,9 @@
-package capability
+package llm
 
 import (
 	"fmt"
 
+	"github.com/thkx/agentkernel/capability"
 	"github.com/thkx/agentkernel/types"
 )
 
@@ -12,4 +13,10 @@ func (l *LLM) Name() types.CapabilityName { return "llm" }
 
 func (l *LLM) Invoke(ctx types.ExecContext, input any) (any, error) {
 	return fmt.Sprintf("LLM(%s)", input), nil
+}
+
+type Plugin struct{}
+
+func (p *Plugin) Register(registry *capability.Registry) {
+	registry.Register(&LLM{})
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"sync"
 	"time"
 
@@ -247,7 +248,12 @@ func (s *Scheduler) RunWithContext(ctx context.Context, start types.NodeID, stat
 
 	dispatchDone := make(chan struct{})
 	go func() {
-		defer close(dispatchDone)
+		defer func() {
+			if r := recover(); r != nil {
+				fmt.Fprintf(os.Stderr, "dispatch goroutine panicked: %v\n", r)
+			}
+			close(dispatchDone)
+		}()
 		for {
 			select {
 			case <-ctx.Done():

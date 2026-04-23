@@ -37,15 +37,3 @@ func (r *Registry) Get(name types.CapabilityName) (Capability, bool) {
 func (r *Registry) Load(plugin Plugin) {
 	plugin.Register(r)
 }
-
-type LLMPlugin struct{}
-
-func (p *LLMPlugin) Register(registry *Registry) {
-	registry.Register(&LLM{})
-}
-
-type ToolPlugin struct{}
-
-func (p *ToolPlugin) Register(registry *Registry) {
-	registry.Register(&Tool{})
-}

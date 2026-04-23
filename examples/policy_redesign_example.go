@@ -3,8 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/thkx/agentkernel/capability"
+	llmplugin "github.com/thkx/agentkernel/plugins/llm"
+	toolplugin "github.com/thkx/agentkernel/plugins/tool"
 	"github.com/thkx/agentkernel/policy"
 	"github.com/thkx/agentkernel/runtime"
 	"github.com/thkx/agentkernel/types"
@@ -40,7 +43,10 @@ func example1ProgrammaticPolicy() {
 		Input("execute action").
 		Build()
 
-	graph := builder.BuildGraph()
+	graph, err := builder.BuildGraph()
+	if err != nil {
+		log.Fatalf("BuildGraph failed: %v", err)
+	}
 
 	// Create a programmatic policy from the graph
 	programmaticPolicy := policy.NewProgrammaticPolicy("my_workflow", graph)
@@ -221,8 +227,8 @@ func example3PolicySelection() {
 func example4RuntimeIntegration() {
 	// Setup
 	registry := capability.NewRegistry()
-	registry.Load(&capability.LLMPlugin{})
-	registry.Load(&capability.ToolPlugin{})
+	registry.Load(&llmplugin.Plugin{})
+	registry.Load(&toolplugin.Plugin{})
 
 	// Create a simple policy
 	builder := policy.NewPolicyBuilder().
@@ -237,7 +243,10 @@ func example4RuntimeIntegration() {
 		Input("Execute").
 		Build()
 
-	graph := builder.BuildGraph()
+	graph, err := builder.BuildGraph()
+	if err != nil {
+		log.Fatalf("BuildGraph failed: %v", err)
+	}
 
 	// Create runtime with the policy
 	rt := runtime.NewRuntime(

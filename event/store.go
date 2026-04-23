@@ -1,6 +1,8 @@
 package event
 
 import (
+	"fmt"
+	"os"
 	"sync"
 
 	"github.com/thkx/agentkernel/types"
@@ -14,6 +16,8 @@ type EventStore interface {
 	AppendTimeline(entry types.ExecutionTimelineEntry) error
 	Timeline() []types.ExecutionTimelineEntry
 }
+
+var _ EventStore = (*InMemoryEventStore)(nil)
 
 type InMemoryEventStore struct {
 	mu       sync.RWMutex
@@ -101,15 +105,17 @@ func NewSourcingBus(store EventStore) *SourcingBus {
 
 func (b *SourcingBus) Publish(e types.Event) {
 	b.mu.Lock()
-	defer b.mu.Unlock()
-
+	subs := make([]chan types.Event, len(b.subs))
+	copy(subs, b.subs)
 	b.store.Append(e)
+	b.mu.Unlock()
 
-	for _, s := range b.subs {
+	for _, s := range subs {
 		select {
 		case s <- e:
 		default:
-			// log non-blocking send, drop event if channel is full
+			// Log dropped event due to full channel
+			fmt.Fprintf(os.Stderr, "event bus: dropped event %v due to full subscriber channel\n", e)
 		}
 	}
 }

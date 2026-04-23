@@ -2,9 +2,12 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/thkx/agentkernel/capability"
+	examplesllm "github.com/thkx/agentkernel/examples/llm"
+	examplestool "github.com/thkx/agentkernel/examples/tool"
 	"github.com/thkx/agentkernel/policy"
 	"github.com/thkx/agentkernel/runtime"
 	"github.com/thkx/agentkernel/types"
@@ -12,23 +15,26 @@ import (
 
 func main() {
 	registry := capability.NewRegistry()
-	registry.Load(&capability.LLMPlugin{})
-	registry.Load(&capability.ToolPlugin{})
+	registry.Register(&examplesllm.LLM{})
+	registry.Register(&examplestool.Tool{})
 
 	// Build a simple graph
 	builder := policy.NewPolicyBuilder().
 		Start("n1").
 		Node("n1").
-			Capability("llm").
-			Input("hello world").
-			NextNode("n2").
-			Build().
+		Capability("llm").
+		Input("hello world").
+		NextNode("n2").
+		Build().
 		Node("n2").
-			Capability("tool").
-			Input("process result").
-			Build()
+		Capability("tool").
+		Input("process result").
+		Build()
 
-	graph := builder.BuildGraph()
+	graph, err := builder.BuildGraph()
+	if err != nil {
+		log.Fatalf("BuildGraph failed: %v", err)
+	}
 
 	rt := runtime.NewRuntime(
 		runtime.WithGraph(graph),

@@ -150,23 +150,9 @@ func NewConfigDrivenPolicy(name string, config *PolicyConfig) *ConfigDrivenPolic
 	}
 }
 
-// NewProgrammaticPolicy creates a policy from a programmatic graph
-func NewProgrammaticPolicy(name string, graph *types.Graph[any]) *ProgrammaticPolicy {
-	return &ProgrammaticPolicy{
-		name:      name,
-		graph:     graph,
-		startNode: graph.Start,
-	}
-}
-
 // Name returns the policy name
 func (cdp *ConfigDrivenPolicy) Name() string {
 	return cdp.name
-}
-
-// Name returns the policy name
-func (pp *ProgrammaticPolicy) Name() string {
-	return pp.name
 }
 
 // Decide makes a decision using the configuration
@@ -181,7 +167,10 @@ func (cdp *ConfigDrivenPolicy) Decide(ctx context.Context, planCtx *PlanContext)
 		return nil, fmt.Errorf("failed to build graph from config: %w", err)
 	}
 
-	graph := builder.BuildGraph()
+	graph, err := builder.BuildGraph()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build graph: %w", err)
+	}
 
 	return &Plan{
 		Graph:      graph,
@@ -216,6 +205,20 @@ func (cdp *ConfigDrivenPolicy) Validate(capRegistry *capability.Registry) error 
 	}
 
 	return nil
+}
+
+// NewProgrammaticPolicy creates a policy from a programmatic graph
+func NewProgrammaticPolicy(name string, graph *types.Graph[any]) *ProgrammaticPolicy {
+	return &ProgrammaticPolicy{
+		name:      name,
+		graph:     graph,
+		startNode: graph.Start,
+	}
+}
+
+// Name returns the policy name
+func (pp *ProgrammaticPolicy) Name() string {
+	return pp.name
 }
 
 // Decide makes a decision using the programmatic graph

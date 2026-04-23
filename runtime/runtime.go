@@ -66,6 +66,10 @@ func (r *Runtime) RunWithContext(ctx context.Context) {
 }
 
 func (r *Runtime) RunSync() {
+	if r.graph == nil {
+		// Log error or handle gracefully
+		return
+	}
 	r.sched.Run(r.graph.Start, map[string]any{})
 }
 

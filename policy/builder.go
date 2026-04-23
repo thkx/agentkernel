@@ -124,11 +124,11 @@ func (nb *NodeBuilder) Build() *PolicyBuilder {
 }
 
 // BuildGraph creates the final Graph
-func (pb *PolicyBuilder) BuildGraph() *types.Graph[any] {
+func (pb *PolicyBuilder) BuildGraph() (*types.Graph[any], error) {
 	if pb.start == "" {
-		panic("start node not set")
+		return nil, fmt.Errorf("start node not set")
 	}
-	return types.NewGraph[any](pb.start, pb.nodes)
+	return types.NewGraph[any](pb.start, pb.nodes), nil
 }
 
 // FromConfig builds a PolicyBuilder from a PolicyConfig
@@ -221,10 +221,10 @@ func buildEdges(fromNodeID string, edgeConfigs []EdgeConfig) ([]types.Edge, erro
 }
 
 // CloneNode creates a copy of an existing node with a new ID
-func (pb *PolicyBuilder) CloneNode(sourceID, newID string) *PolicyBuilder {
+func (pb *PolicyBuilder) CloneNode(sourceID, newID string) (*PolicyBuilder, error) {
 	source, exists := pb.nodes[types.NodeID(sourceID)]
 	if !exists {
-		panic(fmt.Sprintf("source node %s not found", sourceID))
+		return nil, fmt.Errorf("source node %s not found", sourceID)
 	}
 
 	newNode := &types.Node[any]{
@@ -243,7 +243,7 @@ func (pb *PolicyBuilder) CloneNode(sourceID, newID string) *PolicyBuilder {
 	copy(newNode.Next, source.Next)
 
 	pb.nodes[types.NodeID(newID)] = newNode
-	return pb
+	return pb, nil
 }
 
 // RemoveNode removes a node from the graph

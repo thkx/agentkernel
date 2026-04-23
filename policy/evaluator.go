@@ -337,7 +337,7 @@ func NewInputEvaluator(variables map[string]interface{}) *InputEvaluator {
 // Supports:
 //   - Static values: "hello", 123, true
 //   - Variable references: "$varName"
-//   - Complex templates: "user: $user, age: $age" (TODO: implement)
+//   - Complex templates: "user: $user, age: $age"
 func (ie *InputEvaluator) EvaluateInput(input interface{}, stateStore map[string]interface{}) (interface{}, error) {
 	if input == nil {
 		return nil, nil

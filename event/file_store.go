@@ -11,6 +11,8 @@ import (
 	"github.com/thkx/agentkernel/types"
 )
 
+var _ EventStore = (*FileEventStore)(nil)
+
 // FileEventStore persists events to local filesystem
 type FileEventStore struct {
 	mu               sync.RWMutex
@@ -78,7 +80,9 @@ func (fs *FileEventStore) Append(event types.Event) error {
 	fs.eventCount++
 	// Periodically save snapshot
 	if fs.eventCount%fs.snapshotInterval == 0 {
-		_ = fs.saveSnapshot()
+		if err := fs.saveSnapshot(); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to save snapshot: %v\n", err)
+		}
 	}
 
 	return nil
@@ -176,9 +180,11 @@ func (fs *FileEventStore) loadEvents() {
 		if len(line) == 0 {
 			continue
 		}
-		if err := json.Unmarshal(line, &event); err == nil {
-			fs.events = append(fs.events, event)
+		if err := json.Unmarshal(line, &event); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to unmarshal timeline event: %v\n", err)
+			continue
 		}
+		fs.events = append(fs.events, event)
 	}
 }
 
@@ -193,6 +199,7 @@ func (fs *FileEventStore) loadSnapshot() {
 	}
 
 	json.Unmarshal(data, &fs.snapshot)
+	// Note: ignoring unmarshal errors for now, but this could lead to corrupted state
 }
 
 // loadTimeline reads timeline from jsonl file

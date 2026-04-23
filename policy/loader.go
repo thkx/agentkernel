@@ -140,6 +140,37 @@ func (pl *PolicyLoader) validateLoadedConfig(config *PolicyConfig) error {
 		if nodeCfg.ID != nodeID {
 			return fmt.Errorf("policy config: node ID mismatch - key '%s' vs node.id '%s'", nodeID, nodeCfg.ID)
 		}
+
+		// Validate capability is specified
+		if nodeCfg.Capability == "" {
+			return fmt.Errorf("policy config: node '%s' missing capability", nodeID)
+		}
+
+		// Validate timeout is positive if specified
+		if nodeCfg.Config != nil && nodeCfg.Config.Timeout != nil && *nodeCfg.Config.Timeout < 0 {
+			return fmt.Errorf("policy config: node '%s' timeout must be non-negative", nodeID)
+		}
+
+		// Validate rate limit is positive if specified
+		if nodeCfg.Config != nil && nodeCfg.Config.RateLimit < 0 {
+			return fmt.Errorf("policy config: node '%s' rate limit must be non-negative", nodeID)
+		}
+
+		// Validate priority is reasonable
+		if nodeCfg.Config != nil && nodeCfg.Config.Priority < 0 {
+			return fmt.Errorf("policy config: node '%s' priority must be non-negative", nodeID)
+		}
+
+		// Validate edges
+		for _, edge := range nodeCfg.Edges {
+			if edge.To == "" {
+				return fmt.Errorf("policy config: node '%s' has edge with empty 'to' field", nodeID)
+			}
+			// Check if target node exists
+			if _, exists := config.Nodes[edge.To]; !exists {
+				return fmt.Errorf("policy config: node '%s' references non-existent node '%s'", nodeID, edge.To)
+			}
+		}
 	}
 
 	return nil

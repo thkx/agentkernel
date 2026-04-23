@@ -1,6 +1,8 @@
 package policy
 
 import (
+	"fmt"
+
 	"github.com/thkx/agentkernel/capability"
 	"github.com/thkx/agentkernel/types"
 )
@@ -16,7 +18,7 @@ func NewBuilderPlanner(builder *PolicyBuilder) *BuilderPlanner {
 }
 
 // Build builds a graph from the PolicyBuilder
-func (bp *BuilderPlanner) Build(input any) *types.Graph[any] {
+func (bp *BuilderPlanner) Build(input any) (*types.Graph[any], error) {
 	return bp.builder.BuildGraph()
 }
 
@@ -28,6 +30,18 @@ func (bp *BuilderPlanner) GetBuilder() *PolicyBuilder {
 // Validate validates the built graph
 func (bp *BuilderPlanner) Validate(capRegistry *capability.Registry) *ValidationResult {
 	validator := NewPolicyValidator(capRegistry)
-	graph := bp.builder.BuildGraph()
+	graph, err := bp.builder.BuildGraph()
+	if err != nil {
+		return &ValidationResult{
+			Valid: false,
+			Errors: []ValidationError{
+				{
+					Level:   "error",
+					NodeID:  "",
+					Message: fmt.Sprintf("failed to build graph: %v", err),
+				},
+			},
+		}
+	}
 	return validator.ValidateGraph(graph, capRegistry)
 }
