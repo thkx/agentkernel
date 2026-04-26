@@ -40,10 +40,50 @@ func WithGraph(graph *types.Graph[any]) RuntimeOption {
 
 func WithPlugin(plugin capability.Plugin) RuntimeOption {
 	return func(r *Runtime) {
-		if r.caps == nil {
-			r.caps = capability.NewRegistry()
+		if plugin == nil {
+			return
 		}
-		r.caps.Load(plugin)
+		r.plugins = append(r.plugins, plugin)
+	}
+}
+
+func WithPlugins(plugins ...capability.Plugin) RuntimeOption {
+	return func(r *Runtime) {
+		for _, plugin := range plugins {
+			if plugin == nil {
+				continue
+			}
+			r.plugins = append(r.plugins, plugin)
+		}
+	}
+}
+
+func WithPluginConfig(name string, config any) RuntimeOption {
+	return func(r *Runtime) {
+		if name == "" {
+			return
+		}
+		if r.pluginConfigs == nil {
+			r.pluginConfigs = make(map[string]any)
+		}
+		r.pluginConfigs[name] = config
+	}
+}
+
+func WithPluginConfigs(configs map[string]any) RuntimeOption {
+	return func(r *Runtime) {
+		if len(configs) == 0 {
+			return
+		}
+		if r.pluginConfigs == nil {
+			r.pluginConfigs = make(map[string]any, len(configs))
+		}
+		for name, config := range configs {
+			if name == "" {
+				continue
+			}
+			r.pluginConfigs[name] = config
+		}
 	}
 }
 

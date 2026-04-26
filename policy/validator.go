@@ -10,6 +10,7 @@ import (
 // PolicyValidator validates a policy graph for correctness and completeness
 type PolicyValidator struct {
 	capRegistry *capability.Registry
+	bus         types.EventBus
 }
 
 // NewPolicyValidator creates a new policy validator
@@ -17,6 +18,11 @@ func NewPolicyValidator(capRegistry *capability.Registry) *PolicyValidator {
 	return &PolicyValidator{
 		capRegistry: capRegistry,
 	}
+}
+
+func (pv *PolicyValidator) WithBus(bus types.EventBus) *PolicyValidator {
+	pv.bus = bus
+	return pv
 }
 
 // ValidationError represents a validation failure
@@ -38,6 +44,18 @@ func (pv *PolicyValidator) ValidateGraph(graph *types.Graph[any], capRegistry *c
 		Valid:  true,
 		Errors: make([]ValidationError, 0),
 	}
+	defer func() {
+		warnings, errors := summarizeValidation(result)
+		eventName := "policy.validated"
+		if !result.Valid {
+			eventName = "policy.validation_failed"
+		}
+		nodeCount := 0
+		if graph != nil {
+			nodeCount = len(graph.Nodes)
+		}
+		publishPolicyEvent(pv.bus, eventName, "", "validator_graph", result.Valid, nodeCount, nil, warnings, errors, nil)
+	}()
 
 	if graph == nil {
 		result.Valid = false
@@ -246,6 +264,20 @@ func (pv *PolicyValidator) ValidateConfig(config *PolicyConfig, capRegistry *cap
 		Valid:  true,
 		Errors: make([]ValidationError, 0),
 	}
+	defer func() {
+		warnings, errors := summarizeValidation(result)
+		eventName := "policy.validated"
+		if !result.Valid {
+			eventName = "policy.validation_failed"
+		}
+		nodeCount := 0
+		policyName := ""
+		if config != nil {
+			nodeCount = len(config.Nodes)
+			policyName = config.Name
+		}
+		publishPolicyEvent(pv.bus, eventName, policyName, "validator_config", result.Valid, nodeCount, nil, warnings, errors, nil)
+	}()
 
 	if config == nil {
 		result.Valid = false

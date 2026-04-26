@@ -20,3 +20,12 @@ type Plugin struct{}
 func (p *Plugin) Register(registry *capability.Registry) {
 	registry.Register(&Tool{})
 }
+
+func (p *Plugin) Metadata() capability.PluginMetadata {
+	return capability.PluginMetadata{
+		Name:         "tool",
+		Version:      "v1",
+		Description:  "Registers the built-in tool capability.",
+		Capabilities: []types.CapabilityName{"tool"},
+	}
+}

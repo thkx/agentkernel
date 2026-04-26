@@ -118,15 +118,22 @@ func loadFromConfigExample(registry *capability.Registry) {
 		fmt.Printf("BuildGraph failed: %v\n", err)
 		return
 	}
-	rt := runtime.NewRuntime(
+	rt, err := runtime.NewRuntime(
 		runtime.WithGraph(graph),
 		runtime.WithCapabilityRegistry(registry),
 		runtime.WithBeforeHook(func(ctx types.HookContext) {
 			fmt.Printf("  [EXEC] Node: %s, Capability: %s\n", ctx.NodeID, ctx.Capability)
 		}),
 	)
+	if err != nil {
+		fmt.Printf("NewRuntime failed: %v\n", err)
+		return
+	}
 
-	rt.Run()
+	if err := rt.Run(); err != nil {
+		fmt.Printf("Run failed: %v\n", err)
+		return
+	}
 	time.Sleep(500 * time.Millisecond)
 }
 
@@ -186,15 +193,22 @@ func fluentAPIExample(registry *capability.Registry) {
 		fmt.Printf("BuildGraph failed: %v\n", err)
 		return
 	}
-	rt := runtime.NewRuntime(
+	rt, err := runtime.NewRuntime(
 		runtime.WithGraph(graph),
 		runtime.WithCapabilityRegistry(registry),
 		runtime.WithBeforeHook(func(ctx types.HookContext) {
 			fmt.Printf("  [EXEC] Node: %s, Capability: %s\n", ctx.NodeID, ctx.Capability)
 		}),
 	)
+	if err != nil {
+		fmt.Printf("NewRuntime failed: %v\n", err)
+		return
+	}
 
-	rt.Run()
+	if err := rt.Run(); err != nil {
+		fmt.Printf("Run failed: %v\n", err)
+		return
+	}
 	time.Sleep(500 * time.Millisecond)
 }
 

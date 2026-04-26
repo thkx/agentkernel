@@ -15,6 +15,7 @@ type PolicyEngine struct {
 	selector   PolicySelector
 	validator  *PolicyValidator
 	strategies map[string]EvaluationStrategy
+	bus        types.EventBus
 }
 
 // PolicySelector determines which policy to use for a given context
@@ -35,6 +36,7 @@ type DefaultPolicySelector struct {
 // SelectFirst is a common strategy that evaluates policies in order and returns the first valid plan
 type SelectFirstStrategy struct {
 	selector PolicySelector
+	bus      types.EventBus
 }
 
 // NewPolicyEngine creates a new policy engine
@@ -46,7 +48,14 @@ func NewPolicyEngine() *PolicyEngine {
 		selector: &DefaultPolicySelector{
 			DefaultPolicyName: "",
 		},
+		bus: nil,
 	}
+}
+
+// WithBus sets the event bus for the policy engine
+func (pe *PolicyEngine) WithBus(bus types.EventBus) *PolicyEngine {
+	pe.bus = bus
+	return pe
 }
 
 // Register registers a policy with the engine
@@ -58,13 +67,20 @@ func (pe *PolicyEngine) Register(policy Policy) error {
 		return fmt.Errorf("policy name cannot be empty")
 	}
 	pe.policies[policy.Name()] = policy
+
+	publishPolicyEvent(pe.bus, "policy.registered", policy.Name(), "policy_engine", true, 0, nil, 0, 0, map[string]any{
+		"register_time": "now",
+	})
+
 	return nil
 }
 
 // Evaluate evaluates policies and returns a plan
 func (pe *PolicyEngine) Evaluate(ctx context.Context, planCtx *PlanContext) (*Plan, error) {
 	if len(pe.policies) == 0 {
-		return nil, fmt.Errorf("no policies registered")
+		err := fmt.Errorf("no policies registered")
+		publishPolicyEvent(pe.bus, "policy.evaluated_failed", "", "policy_engine", false, 0, err, 0, 1, nil)
+		return nil, err
 	}
 
 	// Use the default strategy if not specified
@@ -72,19 +88,45 @@ func (pe *PolicyEngine) Evaluate(ctx context.Context, planCtx *PlanContext) (*Pl
 	if strategy == nil {
 		strategy = &SelectFirstStrategy{
 			selector: pe.selector,
+			bus:      pe.bus,
 		}
 	}
 
-	return strategy.Evaluate(ctx, pe.policies, planCtx)
+	plan, err := strategy.Evaluate(ctx, pe.policies, planCtx)
+	if err != nil {
+		publishPolicyEvent(pe.bus, "policy.evaluated_failed", "", "policy_engine", false, 0, err, 0, 1, nil)
+		return nil, err
+	}
+
+	publishPolicyEvent(pe.bus, "policy.evaluated", plan.PolicyName, "policy_engine", true, len(plan.Graph.Nodes), nil, 0, 0, map[string]any{
+		"start_node": plan.StartNode,
+	})
+
+	return plan, nil
 }
 
 // Select selects a specific policy by name and evaluates it
 func (pe *PolicyEngine) Select(ctx context.Context, policyName string, planCtx *PlanContext) (*Plan, error) {
 	policy, ok := pe.policies[policyName]
 	if !ok {
-		return nil, fmt.Errorf("policy %q not found", policyName)
+		err := fmt.Errorf("policy %q not found", policyName)
+		publishPolicyEvent(pe.bus, "policy.select_failed", policyName, "policy_engine", false, 0, err, 0, 1, nil)
+		return nil, err
 	}
-	return policy.Decide(ctx, planCtx)
+
+	publishPolicyEvent(pe.bus, "policy.selected", policyName, "policy_engine", true, 0, nil, 0, 0, nil)
+
+	plan, err := policy.Decide(ctx, planCtx)
+	if err != nil {
+		publishPolicyEvent(pe.bus, "policy.evaluated_failed", policyName, "policy_engine", false, 0, err, 0, 1, nil)
+		return nil, err
+	}
+
+	publishPolicyEvent(pe.bus, "policy.evaluated", policyName, "policy_engine", true, len(plan.Graph.Nodes), nil, 0, 0, map[string]any{
+		"start_node": plan.StartNode,
+	})
+
+	return plan, nil
 }
 
 // Validate validates all registered policies
@@ -135,11 +177,27 @@ func (sfs *SelectFirstStrategy) Evaluate(ctx context.Context, policies map[strin
 
 	selectedName, err := sfs.selector.Select(ctx, planCtx, policies)
 	if err != nil {
+		publishPolicyEvent(sfs.bus, "policy.select_failed", "", "select_first_strategy", false, 0, err, 0, 1, nil)
 		return nil, err
 	}
 
+	publishPolicyEvent(sfs.bus, "policy.selected", selectedName, "select_first_strategy", true, 0, nil, 0, 0, map[string]any{
+		"strategy": "select_first",
+	})
+
 	policy := policies[selectedName]
-	return policy.Decide(ctx, planCtx)
+	plan, err := policy.Decide(ctx, planCtx)
+	if err != nil {
+		publishPolicyEvent(sfs.bus, "policy.evaluated_failed", selectedName, "select_first_strategy", false, 0, err, 0, 1, nil)
+		return nil, err
+	}
+
+	publishPolicyEvent(sfs.bus, "policy.evaluated", selectedName, "select_first_strategy", true, len(plan.Graph.Nodes), nil, 0, 0, map[string]any{
+		"start_node": plan.StartNode,
+		"strategy":   "select_first",
+	})
+
+	return plan, nil
 }
 
 // NewConfigDrivenPolicy creates a policy from configuration

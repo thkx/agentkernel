@@ -36,6 +36,29 @@ func TestEventBusSubscription(t *testing.T) {
 	}
 }
 
+func TestEventBusUnsubscribeAndClose(t *testing.T) {
+	bus := NewSourcingBus(NewInMemoryEventStore())
+	sub := bus.Subscribe()
+
+	bus.Unsubscribe(sub)
+	if _, ok := <-sub; ok {
+		t.Fatal("expected unsubscribed channel to be closed")
+	}
+
+	sub2 := bus.Subscribe()
+	if err := bus.Close(); err != nil {
+		t.Fatalf("close failed: %v", err)
+	}
+	if _, ok := <-sub2; ok {
+		t.Fatal("expected close to close subscriber channel")
+	}
+
+	sub3 := bus.Subscribe()
+	if _, ok := <-sub3; ok {
+		t.Fatal("expected subscribe after close to return closed channel")
+	}
+}
+
 func TestEventReplay(t *testing.T) {
 	store := NewInMemoryEventStore()
 

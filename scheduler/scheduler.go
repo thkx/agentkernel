@@ -39,6 +39,7 @@ type Scheduler struct {
 	queued         map[types.NodeID]bool
 	inFlight       int
 	signalCh       chan struct{}
+	lastState      map[string]any
 	mu             sync.Mutex
 }
 
@@ -64,6 +65,7 @@ func New(engine *GraphEngine[any], bus types.EventBus, caps *capability.Registry
 		flowCtl:        newFlowController(),
 		queued:         make(map[types.NodeID]bool),
 		signalCh:       make(chan struct{}, 1),
+		lastState:      make(map[string]any),
 	}
 
 	for _, opt := range opts {
@@ -99,6 +101,26 @@ func (s *Scheduler) Metrics() types.MetricsRecorder {
 
 func (s *Scheduler) DLQSize() int {
 	return s.dlq.Size()
+}
+
+func (s *Scheduler) StateSnapshot() map[string]any {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	snapshot := make(map[string]any, len(s.lastState))
+	for k, v := range s.lastState {
+		snapshot[k] = v
+	}
+	return snapshot
+}
+
+func (s *Scheduler) TaskStates() map[types.NodeID]types.TaskStatus {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	states := make(map[types.NodeID]types.TaskStatus, len(s.taskStates))
+	for id, status := range s.taskStates {
+		states[id] = status
+	}
+	return states
 }
 
 func generateID() string {
@@ -199,6 +221,9 @@ func (s *Scheduler) Run(start types.NodeID, state map[string]any) {
 }
 
 func (s *Scheduler) RunWithContext(ctx context.Context, start types.NodeID, state map[string]any) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	graph := s.engine.graph
 	if graph == nil {
 		log.Println("level=error msg=graph_nil")
@@ -294,6 +319,7 @@ func (s *Scheduler) RunWithContext(ctx context.Context, start types.NodeID, stat
 
 	wg.Wait()
 	<-dispatchDone
+	s.setLastStateSnapshot(runState)
 }
 
 func (s *Scheduler) executeNode(node *types.Node[any], runState *state.Store, children map[types.NodeID][]types.Edge, pendingDeps map[types.NodeID]int, remaining *int) {
@@ -309,10 +335,12 @@ func (s *Scheduler) executeNodeWithContext(ctx context.Context, node *types.Node
 	if s.executed[key] || s.taskStates[node.ID] == types.Running {
 		s.mu.Unlock()
 		log.Printf("level=info msg=skip_already_executed node=%s trace=%s span=%s", node.ID, traceID, spanID)
+		s.publishExecutionEvent("node.skipped", node, traceID, spanID, types.Result{}, 0)
 		return
 	}
 	s.taskStates[node.ID] = types.Running
 	s.mu.Unlock()
+	s.publishExecutionEvent("node.started", node, traceID, spanID, types.Result{}, 0)
 
 	for _, hook := range s.beforeHooks {
 		hook(types.NewHookContext(traceID, spanID, node.ID, node.Capability, node.Input, 0, s.hookStateAccessor(runState, false), types.Result{}))
@@ -328,6 +356,7 @@ func (s *Scheduler) executeNodeWithContext(ctx context.Context, node *types.Node
 		s.taskStates[node.ID] = types.Failed
 		s.mu.Unlock()
 		result := types.Result{Output: nil, Error: fmt.Errorf("capability_not_found"), Status: types.FAILED, Control: types.NEXT}
+		s.publishExecutionEvent("node.failed", node, traceID, spanID, result, 0)
 		s.handleFailure(node, traceID, spanID, runState, result)
 		s.processDependents(node.ID, children, pendingDeps, remaining, result, cancel)
 		return
@@ -335,6 +364,7 @@ func (s *Scheduler) executeNodeWithContext(ctx context.Context, node *types.Node
 
 	if s.isCircuitBreakerOpen(node) {
 		result := types.Result{Output: nil, Error: fmt.Errorf("circuit_breaker_open"), Status: types.FAILED, Control: types.NEXT}
+		s.publishExecutionEvent("node.failed", node, traceID, spanID, result, 0)
 		s.handleFailure(node, traceID, spanID, runState, result)
 		s.processDependents(node.ID, children, pendingDeps, remaining, result, cancel)
 		return
@@ -351,15 +381,10 @@ func (s *Scheduler) executeNodeWithContext(ctx context.Context, node *types.Node
 	startTime := time.Now()
 	execCtx := types.NewExecContext(ctxWithTimeout, traceID, spanID, node.ID, runState)
 	output, err := cap.Invoke(execCtx, node.Input)
-	status := types.SUCCESS
-	if err != nil {
-		status = types.FAILED
-	}
-
-	result := types.Result{Output: output, Error: err, Status: status, Control: types.NEXT}
+	result := normalizeCapabilityResult(output, err)
 
 	attempt := 1
-	if err != nil {
+	if shouldRetry(result) {
 		var retryCount int
 		var retryOK bool
 		ctxWithRetryTimeout, retryCancel := context.WithTimeout(ctx, timeout)
@@ -383,10 +408,14 @@ func (s *Scheduler) executeNodeWithContext(ctx context.Context, node *types.Node
 		}
 	} else {
 		s.mu.Lock()
-		s.taskStates[node.ID] = types.Done
-		s.executed[key] = true
+		if result.Status == types.SUCCESS {
+			s.taskStates[node.ID] = types.Done
+			s.executed[key] = true
+		} else {
+			s.taskStates[node.ID] = types.Failed
+		}
 		s.mu.Unlock()
-		s.flowCtl.recordResult(node, true)
+		s.flowCtl.recordResult(node, result.Status == types.SUCCESS)
 	}
 
 	endTime := time.Now()
@@ -395,7 +424,12 @@ func (s *Scheduler) executeNodeWithContext(ctx context.Context, node *types.Node
 
 	timeline := types.ExecutionTimelineEntry{TraceID: traceID, SpanID: spanID, NodeID: node.ID, Capability: node.Capability, Status: result.Status, StartTime: startTime, EndTime: endTime, Duration: duration, Attempt: attempt, Error: fmt.Sprintf("%v", result.Error)}
 	s.event.Store().AppendTimeline(timeline)
-	s.event.Publish(types.Event{NodeID: string(node.ID), TraceID: traceID, SpanID: spanID, Result: result})
+	eventName := "node.finished"
+	if result.Status == types.FAILED {
+		eventName = "node.failed"
+	}
+	result.Attempt = attempt
+	s.publishExecutionEvent(eventName, node, traceID, spanID, result, duration)
 
 	for _, hook := range s.afterHooks {
 		hook(types.NewHookContext(traceID, spanID, node.ID, node.Capability, node.Input, attempt, s.hookStateAccessor(runState, false), result))
@@ -476,7 +510,8 @@ func (s *Scheduler) processDependents(nodeID types.NodeID, children map[types.No
 
 func (s *Scheduler) recoverState() {
 	s.event.Replay(func(ev types.Event) {
-		if result, ok := ev.Result.(types.Result); ok {
+		result, ok := executionResultFromEvent(ev)
+		if ok {
 			nodeID := types.NodeID(ev.NodeID)
 			s.mu.Lock()
 			defer s.mu.Unlock()
@@ -560,13 +595,15 @@ func (s *Scheduler) retryNode(nodeID types.NodeID, node *types.Node[any], ctx ty
 		}
 
 		output, err := cap.Invoke(ctx, node.Input)
-		if err == nil {
-			result.Output = output
-			result.Error = nil
-			result.Status = types.SUCCESS
+		nextResult := normalizeCapabilityResult(output, err)
+		nextResult.Attempt = attempt
+		*result = nextResult
+		if nextResult.Status == types.SUCCESS {
 			return true, attempt
 		}
-		result.Error = err
+		if !shouldRetry(nextResult) {
+			return false, attempt
+		}
 	}
 	return false, s.retryPol.MaxAttempts
 }
@@ -663,6 +700,107 @@ func (s *Scheduler) resetRunState() {
 			return
 		}
 	}
+}
+
+func (s *Scheduler) setLastStateSnapshot(runState *state.Store) {
+	snapshot := map[string]any{}
+	if runState != nil {
+		snapshot = runState.Snapshot()
+	}
+	s.mu.Lock()
+	s.lastState = snapshot
+	s.mu.Unlock()
+}
+
+func normalizeCapabilityResult(output any, err error) types.Result {
+	var result types.Result
+
+	switch typed := output.(type) {
+	case types.Result:
+		result = typed
+	case *types.Result:
+		if typed != nil {
+			result = *typed
+		}
+	default:
+		result = types.Result{Output: output}
+	}
+
+	if result.Output == nil {
+		switch output.(type) {
+		case types.Result, *types.Result:
+		default:
+			result.Output = output
+		}
+	}
+	if err != nil && result.Error == nil {
+		result.Error = err
+	}
+	if result.Control == "" {
+		result.Control = types.NEXT
+	}
+	if result.Status == "" {
+		if result.Error != nil {
+			result.Status = types.FAILED
+		} else {
+			result.Status = types.SUCCESS
+		}
+	}
+	return result
+}
+
+func shouldRetry(result types.Result) bool {
+	if result.Status != types.FAILED {
+		return false
+	}
+	return result.Error != nil || result.Retryable
+}
+
+func executionResultFromEvent(ev types.Event) (types.Result, bool) {
+	switch payload := ev.Result.(type) {
+	case types.Result:
+		return payload, true
+	case types.ExecutionEvent:
+		if payload.Result != nil {
+			return *payload.Result, true
+		}
+	}
+	return types.Result{}, false
+}
+
+func (s *Scheduler) publishExecutionEvent(name string, node *types.Node[any], traceID, spanID string, result types.Result, duration time.Duration) {
+	if s.event == nil {
+		return
+	}
+	payload := types.ExecutionEvent{
+		Name:      name,
+		TraceID:   traceID,
+		SpanID:    spanID,
+		Duration:  duration,
+		Timestamp: time.Now(),
+	}
+	if node != nil {
+		payload.NodeID = node.ID
+		payload.Capability = node.Capability
+	}
+	if result.Status != "" {
+		payload.Status = result.Status
+		payload.Attempt = result.Attempt
+		if result.Error != nil {
+			payload.Error = result.Error.Error()
+		}
+		copied := result
+		payload.Result = &copied
+	}
+	s.event.Publish(types.Event{
+		Kind:      types.EventKindExecution,
+		Name:      name,
+		NodeID:    string(payload.NodeID),
+		TraceID:   traceID,
+		SpanID:    spanID,
+		Timestamp: payload.Timestamp,
+		Result:    payload,
+	})
 }
 
 func statepkg(data map[string]any) *state.Store {

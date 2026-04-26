@@ -545,6 +545,105 @@ func TestWritableHooksCanMutateSharedStateWithoutGlobalFlag(t *testing.T) {
 	}
 }
 
+func TestRunWithContextSupportsControlResultJump(t *testing.T) {
+	store := event.NewInMemoryEventStore()
+	bus := event.NewSourcingBus(store)
+	registry := capability.NewRegistry()
+
+	var (
+		mu       sync.Mutex
+		executed []string
+	)
+
+	registry.Register(testCapability{
+		name: "cap",
+		fn: func(ctx types.ExecContext, input any) (any, error) {
+			label := input.(string)
+			mu.Lock()
+			executed = append(executed, label)
+			mu.Unlock()
+			if label == "start" {
+				return types.Result{
+					Output:   "jumping",
+					Status:   types.SUCCESS,
+					Control:  types.JUMP,
+					NextNode: "target",
+				}, nil
+			}
+			return label, nil
+		},
+	})
+
+	graph := NewGraphEngine(types.NewGraph[any]("start", map[types.NodeID]*types.Node[any]{
+		"start": {
+			ID:         "start",
+			Capability: "cap",
+			Input:      "start",
+			Next:       []types.Edge{{To: "skipped"}},
+		},
+		"skipped": {
+			ID:         "skipped",
+			Capability: "cap",
+			Input:      "skipped",
+		},
+		"target": {
+			ID:         "target",
+			Capability: "cap",
+			Input:      "target",
+		},
+	}))
+
+	s := New(graph, bus, registry)
+	s.RunWithContext(context.Background(), "start", map[string]any{})
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(executed) != 2 {
+		t.Fatalf("expected 2 nodes to execute after jump, got %d: %v", len(executed), executed)
+	}
+	if executed[0] != "start" || executed[1] != "target" {
+		t.Fatalf("expected jump to execute start then target, got %v", executed)
+	}
+}
+
+func TestRunWithContextPersistsSharedStateSnapshot(t *testing.T) {
+	store := event.NewInMemoryEventStore()
+	bus := event.NewSourcingBus(store)
+	registry := capability.NewRegistry()
+
+	registry.Register(testCapability{
+		name: "cap",
+		fn: func(ctx types.ExecContext, input any) (any, error) {
+			ctx.SetState("last_output", input)
+			return input, nil
+		},
+	})
+
+	graph := NewGraphEngine(types.NewGraph[any]("start", map[types.NodeID]*types.Node[any]{
+		"start": {
+			ID:         "start",
+			Capability: "cap",
+			Input:      "payload",
+		},
+	}))
+
+	s := New(graph, bus, registry)
+	s.RunWithContext(context.Background(), "start", map[string]any{"seed": "value"})
+
+	snapshot := s.StateSnapshot()
+	if snapshot["seed"] != "value" {
+		t.Fatalf("expected initial state to survive in scheduler snapshot, got %v", snapshot["seed"])
+	}
+	if snapshot["last_output"] != "payload" {
+		t.Fatalf("expected runtime state to include capability writes, got %v", snapshot["last_output"])
+	}
+
+	states := s.TaskStates()
+	if states["start"] != types.Done {
+		t.Fatalf("expected task state to be done, got %s", states["start"])
+	}
+}
+
 type testCapability struct {
 	name types.CapabilityName
 	fn   func(ctx types.ExecContext, input any) (any, error)

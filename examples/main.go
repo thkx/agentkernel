@@ -36,7 +36,7 @@ func main() {
 		log.Fatalf("BuildGraph failed: %v", err)
 	}
 
-	rt := runtime.NewRuntime(
+	rt, err := runtime.NewRuntime(
 		runtime.WithGraph(graph),
 		runtime.WithCapabilityRegistry(registry),
 		runtime.WithBeforeHook(func(ctx types.HookContext) {
@@ -47,24 +47,52 @@ func main() {
 			fmt.Printf("HOOK after node=%s trace=%s span=%s status=%s duration=%v\n", ctx.NodeID, ctx.TraceID, ctx.SpanID, ctx.Result.Status, ctx.Result.Output)
 		}),
 	)
+	if err != nil {
+		log.Fatalf("NewRuntime failed: %v", err)
+	}
 
 	// Subscribe to events for feedback
 	sub := rt.Bus().Subscribe()
 	go func() {
 		for ev := range sub {
-			result := ev.Result.(types.Result)
-			fmt.Printf("Event: NodeID=%s trace=%s span=%s Output=%v Status=%s\n", ev.NodeID, ev.TraceID, ev.SpanID, result.Output, result.Status)
+			switch ev.Kind {
+			case types.EventKindRuntime:
+				lifecycle := ev.Result.(types.RuntimeLifecycleEvent)
+				fmt.Printf("RuntimeEvent: name=%s status=%s previous=%s error=%s at=%s\n", ev.Name, lifecycle.Status, lifecycle.Previous, lifecycle.Error, ev.Timestamp.Format(time.RFC3339Nano))
+			default:
+				payload := ev.Result.(types.ExecutionEvent)
+				if payload.Result == nil {
+					fmt.Printf("ExecutionEvent: name=%s node=%s capability=%s trace=%s span=%s at=%s\n", ev.Name, payload.NodeID, payload.Capability, payload.TraceID, payload.SpanID, ev.Timestamp.Format(time.RFC3339Nano))
+					continue
+				}
+				fmt.Printf("ExecutionEvent: name=%s node=%s capability=%s trace=%s span=%s output=%v status=%s attempt=%d duration=%s error=%s at=%s\n", ev.Name, payload.NodeID, payload.Capability, payload.TraceID, payload.SpanID, payload.Result.Output, payload.Status, payload.Attempt, payload.Duration, payload.Error, ev.Timestamp.Format(time.RFC3339Nano))
+			}
 		}
 	}()
 
-	rt.Run()
+	fmt.Printf("Runtime status before run: %s\n", rt.Status())
+	if err := rt.Run(); err != nil {
+		log.Fatalf("Run failed: %v", err)
+	}
 
 	time.Sleep(2 * time.Second)
 
+	fmt.Printf("Runtime health after run: %+v\n", rt.Health())
+
 	fmt.Println("\n--- Replaying Events ---")
 	rt.Bus().Replay(func(ev types.Event) {
-		result := ev.Result.(types.Result)
-		fmt.Printf("Replay: NodeID=%s trace=%s span=%s Output=%v Status=%s\n", ev.NodeID, ev.TraceID, ev.SpanID, result.Output, result.Status)
+		switch ev.Kind {
+		case types.EventKindRuntime:
+			lifecycle := ev.Result.(types.RuntimeLifecycleEvent)
+			fmt.Printf("ReplayRuntime: name=%s status=%s previous=%s error=%s at=%s\n", ev.Name, lifecycle.Status, lifecycle.Previous, lifecycle.Error, ev.Timestamp.Format(time.RFC3339Nano))
+		default:
+			payload := ev.Result.(types.ExecutionEvent)
+			if payload.Result == nil {
+				fmt.Printf("ReplayExecution: name=%s node=%s capability=%s trace=%s span=%s at=%s\n", ev.Name, payload.NodeID, payload.Capability, payload.TraceID, payload.SpanID, ev.Timestamp.Format(time.RFC3339Nano))
+				return
+			}
+			fmt.Printf("ReplayExecution: name=%s node=%s capability=%s trace=%s span=%s output=%v status=%s attempt=%d duration=%s error=%s at=%s\n", ev.Name, payload.NodeID, payload.Capability, payload.TraceID, payload.SpanID, payload.Result.Output, payload.Status, payload.Attempt, payload.Duration, payload.Error, ev.Timestamp.Format(time.RFC3339Nano))
+		}
 	})
 
 	fmt.Println("\n--- State Snapshot ---")

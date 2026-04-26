@@ -230,11 +230,14 @@ func (c *MyCapability) Invoke(ctx types.ExecContext, input any) (any, error) {
 Hook 也遵循同样的规则：
 
 ```go
-rt := runtime.NewRuntime(
+rt, err := runtime.NewRuntime(
     runtime.WithAfterWritableHook(func(ctx types.WritableHookContext) {
         ctx.SetState("last_node", string(ctx.NodeID))
     }),
 )
+if err != nil {
+    panic(err)
+}
 ```
 
 默认情况下，hook 只拿到只读状态访问能力；只有通过 `WithBeforeWritableHook` / `WithAfterWritableHook` 注册并接收 `types.WritableHookContext` 的 hook，写入才会落到共享状态。普通 `HookContext` 不再提供写方法。

@@ -40,12 +40,58 @@ type Capability interface {
 	Invoke(ctx ExecContext, input any) (any, error)
 }
 
+type EventKind string
+
+const (
+	EventKindExecution EventKind = "EXECUTION"
+	EventKindRuntime   EventKind = "RUNTIME"
+	EventKindPolicy    EventKind = "POLICY"
+)
+
 // Event represents an event
 type Event struct {
-	NodeID  string
-	TraceID string
-	SpanID  string
-	Result  any
+	Kind      EventKind
+	Name      string
+	NodeID    string
+	TraceID   string
+	SpanID    string
+	Timestamp time.Time
+	Result    any
+}
+
+type RuntimeLifecycleEvent struct {
+	Name      string
+	Status    string
+	Previous  string
+	Error     string
+	Timestamp time.Time
+}
+
+type ExecutionEvent struct {
+	Name       string
+	NodeID     NodeID
+	Capability CapabilityName
+	TraceID    string
+	SpanID     string
+	Status     ExecStatus
+	Attempt    int
+	Duration   time.Duration
+	Error      string
+	Result     *Result
+	Timestamp  time.Time
+}
+
+type PolicyEvent struct {
+	Name        string
+	PolicyName  string
+	Source      string
+	Valid       bool
+	NodeCount   int
+	Error       string
+	Warnings    int
+	Errors      int
+	Metadata    map[string]any
+	Timestamp   time.Time
 }
 
 // Scheduler interface for execution abstraction
@@ -59,14 +105,18 @@ type Scheduler interface {
 	RegisterAfterWritableHook(hook WritableHookFunc)
 	Metrics() MetricsRecorder
 	DLQSize() int
+	StateSnapshot() map[string]any
+	TaskStates() map[NodeID]TaskStatus
 }
 
 // EventBus interface for event abstraction
 type EventBus interface {
 	Publish(event Event)
 	Subscribe() chan Event
+	Unsubscribe(ch chan Event)
 	Replay(handler func(Event)) error
 	Store() EventStore
+	Close() error
 }
 
 // EventStore interface for storage abstraction

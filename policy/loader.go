@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/thkx/agentkernel/types"
 	"gopkg.in/yaml.v3"
 )
 
@@ -12,11 +13,17 @@ import (
 type PolicyLoader struct {
 	// Optional: validator to validate config after loading
 	validator *PolicyValidator
+	bus       types.EventBus
 }
 
 // NewPolicyLoader creates a new policy loader
 func NewPolicyLoader() *PolicyLoader {
 	return &PolicyLoader{}
+}
+
+func (pl *PolicyLoader) WithBus(bus types.EventBus) *PolicyLoader {
+	pl.bus = bus
+	return pl
 }
 
 // LoadFromJSON loads a policy configuration from a JSON file
@@ -32,8 +39,10 @@ func (pl *PolicyLoader) LoadFromJSON(filename string) (*PolicyConfig, error) {
 	}
 
 	if err := pl.validateLoadedConfig(&config); err != nil {
+		publishPolicyEvent(pl.bus, "policy.config_load_failed", config.Name, "json_file", false, len(config.Nodes), err, 0, 1, map[string]any{"filename": filename})
 		return nil, err
 	}
+	publishPolicyEvent(pl.bus, "policy.config_loaded", config.Name, "json_file", true, len(config.Nodes), nil, 0, 0, map[string]any{"filename": filename})
 
 	return &config, nil
 }
@@ -51,8 +60,10 @@ func (pl *PolicyLoader) LoadFromYAML(filename string) (*PolicyConfig, error) {
 	}
 
 	if err := pl.validateLoadedConfig(&config); err != nil {
+		publishPolicyEvent(pl.bus, "policy.config_load_failed", config.Name, "yaml_file", false, len(config.Nodes), err, 0, 1, map[string]any{"filename": filename})
 		return nil, err
 	}
+	publishPolicyEvent(pl.bus, "policy.config_loaded", config.Name, "yaml_file", true, len(config.Nodes), nil, 0, 0, map[string]any{"filename": filename})
 
 	return &config, nil
 }
@@ -65,8 +76,10 @@ func (pl *PolicyLoader) LoadFromJSONString(jsonStr string) (*PolicyConfig, error
 	}
 
 	if err := pl.validateLoadedConfig(&config); err != nil {
+		publishPolicyEvent(pl.bus, "policy.config_load_failed", config.Name, "json_string", false, len(config.Nodes), err, 0, 1, nil)
 		return nil, err
 	}
+	publishPolicyEvent(pl.bus, "policy.config_loaded", config.Name, "json_string", true, len(config.Nodes), nil, 0, 0, nil)
 
 	return &config, nil
 }
@@ -79,8 +92,10 @@ func (pl *PolicyLoader) LoadFromYAMLString(yamlStr string) (*PolicyConfig, error
 	}
 
 	if err := pl.validateLoadedConfig(&config); err != nil {
+		publishPolicyEvent(pl.bus, "policy.config_load_failed", config.Name, "yaml_string", false, len(config.Nodes), err, 0, 1, nil)
 		return nil, err
 	}
+	publishPolicyEvent(pl.bus, "policy.config_loaded", config.Name, "yaml_string", true, len(config.Nodes), nil, 0, 0, nil)
 
 	return &config, nil
 }

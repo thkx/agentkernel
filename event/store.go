@@ -39,8 +39,15 @@ func (s *InMemoryEventStore) Append(event types.Event) error {
 	defer s.mu.Unlock()
 	s.events = append(s.events, event)
 	// Update snapshot
-	if result, ok := event.Result.(types.Result); ok {
-		s.snapshot[event.NodeID] = result.Output
+	if event.Kind == "" || event.Kind == types.EventKindExecution {
+		switch payload := event.Result.(type) {
+		case types.Result:
+			s.snapshot[event.NodeID] = payload.Output
+		case types.ExecutionEvent:
+			if payload.Result != nil {
+				s.snapshot[event.NodeID] = payload.Result.Output
+			}
+		}
 	}
 	return nil
 }
@@ -91,22 +98,29 @@ func (s *InMemoryEventStore) Timeline() []types.ExecutionTimelineEntry {
 
 // Enhanced Bus with Event Sourcing
 type SourcingBus struct {
-	mu    sync.Mutex
-	store EventStore
-	subs  []chan types.Event
+	mu     sync.Mutex
+	store  EventStore
+	subs   map[chan types.Event]struct{}
+	closed bool
 }
 
 func NewSourcingBus(store EventStore) *SourcingBus {
 	return &SourcingBus{
 		store: store,
-		subs:  make([]chan types.Event, 0),
+		subs:  make(map[chan types.Event]struct{}),
 	}
 }
 
 func (b *SourcingBus) Publish(e types.Event) {
 	b.mu.Lock()
-	subs := make([]chan types.Event, len(b.subs))
-	copy(subs, b.subs)
+	if b.closed {
+		b.mu.Unlock()
+		return
+	}
+	subs := make([]chan types.Event, 0, len(b.subs))
+	for ch := range b.subs {
+		subs = append(subs, ch)
+	}
 	b.store.Append(e)
 	b.mu.Unlock()
 
@@ -127,11 +141,40 @@ func (b *SourcingBus) Replay(handler func(types.Event)) error {
 func (b *SourcingBus) Subscribe() chan types.Event {
 	ch := make(chan types.Event, 10)
 	b.mu.Lock()
-	b.subs = append(b.subs, ch)
+	if b.closed {
+		close(ch)
+		b.mu.Unlock()
+		return ch
+	}
+	b.subs[ch] = struct{}{}
 	b.mu.Unlock()
 	return ch
 }
 
+func (b *SourcingBus) Unsubscribe(ch chan types.Event) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if _, ok := b.subs[ch]; !ok {
+		return
+	}
+	delete(b.subs, ch)
+	close(ch)
+}
+
 func (b *SourcingBus) Store() types.EventStore {
 	return b.store
+}
+
+func (b *SourcingBus) Close() error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closed {
+		return nil
+	}
+	b.closed = true
+	for ch := range b.subs {
+		close(ch)
+		delete(b.subs, ch)
+	}
+	return nil
 }

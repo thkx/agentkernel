@@ -249,13 +249,18 @@ func example4RuntimeIntegration() {
 	}
 
 	// Create runtime with the policy
-	rt := runtime.NewRuntime(
+	rt, err := runtime.NewRuntime(
 		runtime.WithGraph(graph),
 		runtime.WithCapabilityRegistry(registry),
 	)
+	if err != nil {
+		log.Fatalf("NewRuntime failed: %v", err)
+	}
 
 	// Run the workflow
-	rt.Run()
+	if err := rt.Run(); err != nil {
+		log.Fatalf("Run failed: %v", err)
+	}
 
 	fmt.Println("Runtime integration example completed")
 }

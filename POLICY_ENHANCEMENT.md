@@ -196,11 +196,16 @@ if !result.Valid {
 }
 
 // 4. 在 Runtime 中使用
-rt := runtime.NewRuntime(
+rt, err := runtime.NewRuntime(
     runtime.WithPlanner(planner),
     runtime.WithCapabilityRegistry(registry),
 )
-rt.Run()
+if err != nil {
+    panic(err)
+}
+if err := rt.Run(); err != nil {
+    panic(err)
+}
 ```
 
 ### 示例 2：使用 Fluent API 动态构建
@@ -229,11 +234,16 @@ builder := policy.NewPolicyBuilder().
         Build()
 
 planner := policy.NewBuilderPlanner(builder)
-rt := runtime.NewRuntime(
+rt, err := runtime.NewRuntime(
     runtime.WithPlanner(planner),
     runtime.WithCapabilityRegistry(registry),
 )
-rt.Run()
+if err != nil {
+    panic(err)
+}
+if err := rt.Run(); err != nil {
+    panic(err)
+}
 ```
 
 ### 示例 3：运行时修改 DAG

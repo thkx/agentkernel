@@ -45,6 +45,29 @@ func TestRegistry_RegisterAndGet(t *testing.T) {
 	}
 }
 
+func TestRegistry_TracksDuplicateCapabilitiesWithoutOverwriting(t *testing.T) {
+	registry := NewRegistry()
+
+	first := &testLLM{}
+	second := &testLLM{}
+
+	registry.Register(first)
+	registry.Register(second)
+
+	retrieved, exists := registry.Get("test-llm")
+	if !exists {
+		t.Fatal("expected capability to remain registered")
+	}
+	if retrieved != first {
+		t.Fatal("expected first registration to win when duplicate is registered")
+	}
+
+	dups := registry.DuplicateNames()
+	if len(dups) != 1 || dups[0] != "test-llm" {
+		t.Fatalf("expected duplicate name to be tracked, got %v", dups)
+	}
+}
+
 func TestLLM_Invoke(t *testing.T) {
 	llm := &testLLM{}
 

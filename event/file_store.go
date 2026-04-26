@@ -57,8 +57,15 @@ func (fs *FileEventStore) Append(event types.Event) error {
 	// Append to memory
 	fs.events = append(fs.events, event)
 	// Update snapshot
-	if result, ok := event.Result.(types.Result); ok {
-		fs.snapshot[event.NodeID] = result.Output
+	if event.Kind == "" || event.Kind == types.EventKindExecution {
+		switch payload := event.Result.(type) {
+		case types.Result:
+			fs.snapshot[event.NodeID] = payload.Output
+		case types.ExecutionEvent:
+			if payload.Result != nil {
+				fs.snapshot[event.NodeID] = payload.Result.Output
+			}
+		}
 	}
 
 	// Write event to file
